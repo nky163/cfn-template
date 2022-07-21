@@ -1,0 +1,183 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Gitlab Self Hosting
+
+Parameters:
+  VPCCIDR:
+    Type: String
+    Default: "10.1.0.0/16"
+  PublicSubnetACIDR:
+    Type: String
+    Default: "10.1.0.0/24"
+
+Resources:
+  GitlabVPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      Tags:
+        - Key: 'Name'
+          Value: 'test-vpc'
+
+  GitlabPublicSubnet:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref GitlabVPC
+      CidrBlock: !Ref PublicSubnetACIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: 'Name'
+          Value: 'test-cfn-subnet'
+
+  GitlabIGW:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+      - Key: 'Name'
+        Value: 'test-cfn-igw'
+  GitlabAttachGateway:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref GitlabVPC
+      InternetGatewayId: !Ref GitlabIGW
+  GitlabRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      Tags:
+        - Key: 'Name'
+          Value: 'test-cfn-rt'
+      VpcId: !Ref GitlabVPC
+  GitlabRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: GitlabIGW
+    Properties:
+      RouteTableId: !Ref GitlabRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref GitlabIGW
+  GitlabPublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref GitlabPublicSubnet
+      RouteTableId: !Ref GitlabRouteTable
+  
+  ElasticIP:
+    Type: "AWS::EC2::EIP"
+    Properties:
+      Domain: vpc
+  
+  eipAssociateRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service:
+                - 'ec2.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      Path: '/'
+      RoleName: 'eipAssociate-role'
+  
+  eipAssociatePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: eipAssociate
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+            - "ec2:AssociateAddress"
+          Resource: "*"
+      Roles:
+      - !Ref eipAssociateRole
+  
+  eipAssociateInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - !Ref eipAssociateRole
+  
+  GitlabSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: "GitlabSecurityGroup"
+      VpcId: !Ref GitlabVPC
+      Tags:
+        - Key: 'Name'
+          Value: 'test-cfn-ssh-sg'
+      SecurityGroupIngress:
+        -
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 180.28.67.56/32
+        -
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 180.28.67.56/32
+  
+  GitlabEC2Instance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      ImageId: "ami-0b7546e839d7ace12"
+      InstanceType: "t3.medium"
+      SubnetId: !Ref GitlabPublicSubnet
+      BlockDeviceMappings:
+        - DeviceName: '/dev/xvda'
+          Ebs:
+            VolumeType: 'gp2'
+            VolumeSize: 8
+      Tags:
+        - Key: 'Name'
+          Value: 'test-cfn-ec2-instance'
+      SecurityGroupIds:
+        - !Ref GitlabSecurityGroup
+      IamInstanceProfile:
+        !Ref eipAssociateInstanceProfile
+      UserData:
+        Fn::Base64:
+          !Sub
+            - |
+              #!/bin/bash
+              
+              # 各種初期化
+              INSTANCE_ID=`curl http://169.254.169.254/latest/meta-data/instance-id`
+              REGION=`curl http://169.254.169.254/latest/dynamic/instance-identity/document | grep region | awk -F\" '{print $4}'`
+              ALLOC_ID=${ALLOC_ID}
+              CMD="aws ec2 associate-address --instance-id ${!INSTANCE_ID} --allocation-id ${!ALLOC_ID} --no-allow-reassociation --region=${!REGION}"
+              $CMD || exit 1
+              
+              timedatectl set-timezone "Asia/Tokyo"
+              yum update -y
+              
+              # Gitlab依存パッケージインストール
+              yum install -y curl policycoreutils-python openssh-server
+              systemctl enable sshd
+              systemctl start sshd
+              yum install postfix
+              systemctl enable postfix
+              systemctl start postfix
+              PUBLIC_DNS=$(ec2-metadata -p | sed -e 's/public-hostname: //')
+              curl https://packages.gitlab.com/install/repositories/gitlab/gitlab-ee/script.rpm.sh | bash
+              EXTERNAL_URL="https://${!PUBLIC_DNS}" yum install -y gitlab-ee
+              
+              # SSL化
+              sed -i -r 's#^(external_url ")http(.*)#\1https\2#' /etc/gitlab/gitlab.rb
+              cd /etc/gitlab/ssl
+              CRT_FILE="${!PUBLIC_DNS}.crt"
+              KEY_FILE="${!PUBLIC_DNS}.key"
+              SUBJECT="/C=JP/ST=Tokyo/L=Tokyo City/CN=*.${!PUBLIC_DNS}"
+              openssl req -new -newkey rsa:2048 -x509 -nodes \
+                -set_serial 1 \
+                -days 398 \
+                -subj "${!SUBJECT}" \
+                -out "${!CRT_FILE}" -sha256\
+                -keyout "${!KEY_FILE}" -sha256
+              
+              # 起動
+              gitlab-ctl reconfigure
+            - ALLOC_ID: !GetAtt ElasticIP.AllocationId
