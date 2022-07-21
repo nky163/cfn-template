@@ -137,7 +137,7 @@ Resources:
     Properties:
       ImageId: "ami-0b7546e839d7ace12"
       KeyName: !Ref GitlabKeyPair
-      InstanceType: "t3.medium"
+      InstanceType: "m5.large"
       SubnetId: !Ref GitlabPublicSubnet
       BlockDeviceMappings:
         - DeviceName: '/dev/xvda'
