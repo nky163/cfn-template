@@ -155,7 +155,7 @@ Resources:
             - |
               #!/bin/bash
               
-              # 各種初期化
+              # initialize
               INSTANCE_ID=`curl http://169.254.169.254/latest/meta-data/instance-id`
               REGION=`curl http://169.254.169.254/latest/dynamic/instance-identity/document | grep region | awk -F\" '{print $4}'`
               ALLOC_ID=${ALLOC_ID}
@@ -165,7 +165,7 @@ Resources:
               timedatectl set-timezone "Asia/Tokyo"
               yum update -y
               
-              # Gitlab依存パッケージインストール
+              # install gitlab depended package
               yum install -y curl policycoreutils-python openssh-server
               systemctl enable sshd
               systemctl start sshd
@@ -176,7 +176,7 @@ Resources:
               curl https://packages.gitlab.com/install/repositories/gitlab/gitlab-ee/script.rpm.sh | bash
               EXTERNAL_URL="https://${!PUBLIC_DNS}" yum install -y gitlab-ee
               
-              # SSL化
+              # ssl setup
               sed -i -r 's#^(external_url ")http(.*)#\1https\2#' /etc/gitlab/gitlab.rb
               cd /etc/gitlab/ssl
               CRT_FILE="${!PUBLIC_DNS}.crt"
@@ -189,6 +189,6 @@ Resources:
                 -out "${!CRT_FILE}" -sha256\
                 -keyout "${!KEY_FILE}" -sha256
               
-              # 起動
+              # start gitlab
               gitlab-ctl reconfigure
             - ALLOC_ID: !GetAtt ElasticIP.AllocationId
