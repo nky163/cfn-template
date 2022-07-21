@@ -128,15 +128,11 @@ Resources:
           FromPort: 22
           ToPort: 22
           CidrIp: 180.28.67.56/32
-  GitlabKeyPair:
-    Type: 'AWS::EC2::KeyPair'
-    Properties:
-      KeyName: !Ref KeyName
   GitlabEC2Instance:
     Type: 'AWS::EC2::Instance'
     Properties:
       ImageId: "ami-0b7546e839d7ace12"
-      KeyName: !Ref GitlabKeyPair
+      KeyName: !Ref EC2KeyName
       InstanceType: "m5.large"
       SubnetId: !Ref GitlabPublicSubnet
       BlockDeviceMappings:
