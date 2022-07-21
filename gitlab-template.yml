@@ -8,6 +8,8 @@ Parameters:
   PublicSubnetACIDR:
     Type: String
     Default: "10.1.0.0/24"
+  EC2KeyName:
+    Type: String
 
 Resources:
   GitlabVPC:
@@ -129,7 +131,7 @@ Resources:
   GitlabKeyPair:
     Type: 'AWS::EC2::KeyPair'
     Properties:
-      KeyName: GitlabKeyPair
+      KeyName: !Ref KeyName
   GitlabEC2Instance:
     Type: 'AWS::EC2::Instance'
     Properties:
