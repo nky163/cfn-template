@@ -20,7 +20,7 @@ Resources:
       EnableDnsSupport: true
       Tags:
         - Key: 'Name'
-          Value: 'test-vpc'
+          Value: 'gitlab-vpc'
 
   GitlabPublicSubnet:
     Type: 'AWS::EC2::Subnet'
@@ -30,14 +30,14 @@ Resources:
       MapPublicIpOnLaunch: true
       Tags:
         - Key: 'Name'
-          Value: 'test-cfn-subnet'
+          Value: 'gitlab-public-subnet'
 
   GitlabIGW:
     Type: 'AWS::EC2::InternetGateway'
     Properties:
       Tags:
       - Key: 'Name'
-        Value: 'test-cfn-igw'
+        Value: 'gitlab-vpc-igw'
   GitlabAttachGateway:
     Type: 'AWS::EC2::VPCGatewayAttachment'
     Properties:
@@ -48,7 +48,7 @@ Resources:
     Properties:
       Tags:
         - Key: 'Name'
-          Value: 'test-cfn-rt'
+          Value: 'gitlab-rt'
       VpcId: !Ref GitlabVPC
   GitlabRoute:
     Type: 'AWS::EC2::Route'
